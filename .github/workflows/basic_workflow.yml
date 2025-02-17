@@ -9,6 +9,15 @@ jobs:
     runs-on: self-hosted
     environment: ${{ github.ref_name }}
     steps:
+      - name: Debug self-hosted runner info
+        run: |
+          echo "Current user: $(whoami)"
+          echo "Home directory: $HOME"
+          echo "Working directory: $PWD"
+          echo "Runner OS: $RUNNER_OS"
+          echo "GitHub workspace: $GITHUB_WORKSPACE"
+          echo "System information:"
+          uname -a
       - name: Checkout code
         uses: actions/checkout@v4
         with:
