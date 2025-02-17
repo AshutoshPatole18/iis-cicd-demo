@@ -25,6 +25,17 @@ jobs:
           name: dsx-package
           path: artifacts/*.dsx
           retention-days: 30
+
+      - name: Copy files to remote server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          source: "artifacts/*.dsx"
+          target: "/tmp/DSBuild"
+
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.2.0
         with:
