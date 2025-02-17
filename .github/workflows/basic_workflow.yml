@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: ${{ github.ref_name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,10 +29,9 @@ jobs:
       - name: Copy files over SSH
         uses: appleboy/scp-action@v0.1.7
         with:
-          host: "10.100.15.30"
-          username: "root"
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
           # key: ${{ secrets.SSH_PRIVATE_KEY }}
-          password: "Welcome#12"
+          password: ${{ secrets.PASSWORD }}
           source: artifacts/*.dsx
           target: /tmp/DSBuild/
-
