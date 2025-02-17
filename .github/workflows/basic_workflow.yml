@@ -1,12 +1,26 @@
-name: Hello World Workflow
+name: IIS DSX Import Pipeline
 
 on:
   push:
-    branches: [ main ]
+    branches: [ dev, uat, sit, perf, prod ]
 
 jobs:
-  hello:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Print Hello World
-        run: echo "Hello, world!"
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          ref: ${{ github.ref }}
+          
+      - name: Copy DSX file to artifact directory
+        run: |
+          mkdir -p artifacts
+          cp IIS/ds_package/*.dsx artifacts/
+
+      - name: Upload DSX as artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: dsx-package
+          path: artifacts/*.dsx
+          retention-days: 30
