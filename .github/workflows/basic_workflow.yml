@@ -5,7 +5,7 @@ on:
     branches: [ dev, uat, sit, perf, prod ]
 
 jobs:
-  build:
+  debug-info:
     runs-on: self-hosted
     environment: ${{ github.ref_name }}
     steps:
@@ -18,6 +18,12 @@ jobs:
           echo "GitHub workspace: $GITHUB_WORKSPACE"
           echo "System information:"
           uname -a
+
+  prepare-artifacts:
+    needs: debug-info
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -35,6 +41,17 @@ jobs:
           path: artifacts/*.dsx
           retention-days: 30
 
+  copy-to-remote:
+    needs: prepare-artifacts
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dsx-package
+          path: artifacts
+
       - name: Copy files to remote server
         run: |
           mkdir -p ~/.ssh
@@ -43,6 +60,11 @@ jobs:
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/
           rm -f ~/.ssh/id_rsa
 
+  setup-remote:
+    needs: copy-to-remote
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.2.0
         with:
