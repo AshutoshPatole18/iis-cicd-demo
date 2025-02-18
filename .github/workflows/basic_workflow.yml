@@ -73,6 +73,13 @@ jobs:
           password: ${{ secrets.PASSWORD }}
           port: ${{ secrets.PORT }}
           script: |
-            whoami
-            hostname -f
-            mkdir -pv /tmp/DSBuild
+              source ~/.bash_profile
+              cd /tmp/DSBuild
+              export IIS_DSX_PACKAGE=$(ls /tmp/DSBuild/*.dsx)
+              IIS_ISADMIN_DIR="/opt/IBM/InformationServer/ASBNode/bin"
+              cd ${IIS_ISADMIN_DIR}
+              echo "Importing the DS Job on the ${{ github.ref_name }} Environment"
+              sudo ./DSXImportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9443 -ISUser ${{ secrets.IS_USERNAME }} -ISPassword ${{ secrets.IS_PASSWORD }} -DSProject ${{ vars.IS_PROJECT_NAME }} -DSXFile "${IIS_DSX_PACKAGE}" -Overwrite >> /tmp/DSBuild/job.log  2>&1
+              cat /tmp/DSBuild/job.log
+              cd /tmp/
+              rm -rf DSBuild
