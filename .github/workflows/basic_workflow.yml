@@ -35,15 +35,13 @@ jobs:
           path: artifacts/*.dsx
           retention-days: 30
 
-      # - name: Copy files to remote server
-      #   uses: appleboy/scp-action@v0.1.7
-      #   with:
-      #     host: ${{ secrets.SERVER_HOST }}
-      #     username: root
-      #     password: ${{ secrets.PASSWORD }}
-      #     port: ${{ secrets.PORT }}
-      #     source: "artifacts/*.dsx"
-      #     target: "/tmp/DSBuild"
+      - name: Copy files to remote server
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/
+          rm -f ~/.ssh/id_rsa
 
       - name: executing remote ssh commands using password
         uses: appleboy/ssh-action@v1.2.0
