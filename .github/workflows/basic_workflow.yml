@@ -61,6 +61,9 @@ jobs:
           
           echo "Checking source files before upload..."
           ls -l artifacts/*.dsx
+
+          echo "Creating remote directory..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "mkdir -p /tmp/DSBuild"
           
           echo "Attempting to copy files to remote server..."
           scp -v -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/
