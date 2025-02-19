@@ -54,11 +54,23 @@ jobs:
 
       - name: Copy files to remote server
         run: |
+          echo "Setting up SSH directory and key..."
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/
+          
+          echo "Checking source files before upload..."
+          ls -l artifacts/*.dsx
+          
+          echo "Attempting to copy files to remote server..."
+          scp -v -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/
+          
+          echo "Verifying files on remote server..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "ls -l /tmp/DSBuild/*.dsx"
+          
+          echo "Cleaning up SSH key..."
           rm -f ~/.ssh/id_rsa
+          echo "File transfer process completed"
 
   setup-remote:
     needs: copy-to-remote
@@ -79,7 +91,7 @@ jobs:
               IIS_ISADMIN_DIR="/opt/IBM/InformationServer/ASBNode/bin"
               cd ${IIS_ISADMIN_DIR}
               echo "Importing the DS Job on the ${{ github.ref_name }} Environment"
-              sudo ./DSXImportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9443 -ISUser ${{ secrets.IS_USERNAME }} -ISPassword ${{ secrets.IS_PASSWORD }} -DSProject ${{ vars.IS_PROJECT_NAME }} -DSXFile "${IIS_DSX_PACKAGE}" -Overwrite >> /tmp/DSBuild/job.log  2>&1
+              sudo ./DSXImportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9446 -ISUser ${{ secrets.IS_USERNAME }} -ISPassword ${{ secrets.IS_PASSWORD }} -DSProject ${{ vars.IS_PROJECT_NAME }} -DSXFile "${IIS_DSX_PACKAGE}" -Overwrite >> /tmp/DSBuild/job.log  2>&1
               cat /tmp/DSBuild/job.log
               cd /tmp/
               rm -rf DSBuild
