@@ -46,9 +46,12 @@ jobs:
             echo "Installing trufflehog..."
             python3 -m pip install trufflehog
           fi
-          
+          # print the current directory
+          echo "Current directory: $(pwd)"
+          # list the files in the current directory
+          ls -la
           # Run secret scanning
-          trufflehog filesystem .
+          trufflehog git file://iis-cicd-demo
 
   prepare-artifacts:
     needs: [pre-checks, security-scan]
