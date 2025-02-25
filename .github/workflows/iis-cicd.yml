@@ -1,0 +1,274 @@
+name: IIS DSX Import Pipeline
+
+on:
+  push:
+    branches: [dev, uat, sit, perf, prod]
+
+env:
+  ARTIFACT_DIR: /tmp/DSBuild
+  IIS_ADMIN_DIR: /opt/IBM/InformationServer/ASBNode/bin
+  SSH_OPTS: -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+
+jobs:
+  pre-checks:
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    outputs:
+      valid: ${{ steps.validate.outputs.valid }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate DSX Structure
+        id: validate
+        run: |
+          echo "Checking for DSX file presence..."
+          if ! ls IIS/ds_package/*.dsx 1> /dev/null 2>&1; then
+            echo "::error::No DSX file found in IIS/ds_package directory"
+            exit 1
+          fi
+          echo "DSX file found"
+          echo "::set-output name=valid::true"
+
+  security-scan:
+    needs: pre-checks
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Secret Scanning
+        uses: trufflesecurity/trufflehog@latest
+        with:
+          path: ./
+          fail: true
+
+  prepare-artifacts:
+    needs: [pre-checks, security-scan]
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          
+      - name: Copy DSX file to artifact directory
+        run: |
+          mkdir -p artifacts
+          cp IIS/ds_package/*.dsx artifacts/
+
+      - name: Upload DSX as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsx-package
+          path: artifacts/*.dsx
+          retention-days: 30
+
+  infra-check:
+    needs: prepare-artifacts
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Verify DataStage Services
+        run: |
+          ssh $SSH_OPTS -i ~/.ssh/id_rsa root@${{ secrets.SERVER_HOST }} <<EOF
+            if ! ps -ef | grep -i dsrpcd | grep -v grep > /dev/null; then
+              echo "DataStage services not running (dsrpcd process not found)"
+              exit 1
+            fi
+            echo "Services status:"
+            ps -ef | grep -i dsrpcd | grep -v grep
+
+            if ! ss -tuln | grep :31538 > /dev/null; then
+              echo "Port 31538 is not listening"
+              exit 1
+            fi
+            echo "Port 31538 is listening"
+          EOF
+
+  copy-to-remote:
+    needs: infra-check
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dsx-package
+          path: artifacts
+
+      - name: Copy files to remote server
+        run: |
+          set -e
+          echo "Setting up SSH directory and key..."
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          
+          echo "Checking source files before upload..."
+          ls -l artifacts/*.dsx
+
+          echo "Creating remote directory..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "mkdir -p /tmp/DSBuild" || { echo "Failed to create remote directory"; exit 1; }
+          
+          echo "Attempting to copy files to remote server..."
+          scp -v -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/ || { echo "File copy failed"; exit 1; }
+          
+          echo "Verifying files on remote server..."
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "ls -l /tmp/DSBuild/*.dsx" || { echo "Verification failed"; exit 1; }
+          
+          echo "Cleaning up SSH key..."
+          rm -f ~/.ssh/id_rsa
+          echo "File transfer process completed"
+
+  pre-import:
+    needs: copy-to-remote
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Create Backup Snapshot
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          password: ${{ secrets.PASSWORD }}
+          script: |
+            TIMESTAMP=$(date +%Y%m%d%H%M%S)
+            $IIS_ADMIN_DIR/DSXExportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9446 \
+              -ISUser ${{ secrets.IS_USERNAME }} -ISPassword ${{ secrets.IS_PASSWORD }} \
+              -DSProject ${{ vars.IS_PROJECT_NAME }} -DSXFile "$ARTIFACT_DIR/backup_$TIMESTAMP.dsx"
+
+  import-dsx:
+    needs: pre-import
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Import DSX Package
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          password: ${{ secrets.PASSWORD }}
+          port: ${{ secrets.PORT }}
+          script: |
+            set -e
+            source ~/.bash_profile
+            
+            # Enhanced logging
+            exec > >(tee -a /tmp/DSBuild/import.log) 2>&1
+            
+            cd /tmp/DSBuild
+            export IIS_DSX_PACKAGE=$(ls /tmp/DSBuild/*.dsx)
+            IIS_ISADMIN_DIR="/opt/IBM/InformationServer/ASBNode/bin"
+            cd ${IIS_ISADMIN_DIR}
+            
+            echo "Importing the DS Job on the ${{ github.ref_name }} Environment"
+            sudo ./DSXImportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9446 \
+              -ISUser ${{ secrets.IS_USERNAME }} \
+              -ISPassword ${{ secrets.IS_PASSWORD }} \
+              -DSProject ${{ vars.IS_PROJECT_NAME }} \
+              -DSXFile "${IIS_DSX_PACKAGE}" \
+              -Overwrite >> /tmp/DSBuild/job.log 2>&1 || { echo "Import failed"; cat /tmp/DSBuild/job.log; exit 1; }
+            
+            cat /tmp/DSBuild/job.log
+            cd /tmp/
+            rm -rf DSBuild
+
+  post-deployment:
+    needs: import-dsx
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Run Smoke Tests
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: root
+          password: ${{ secrets.PASSWORD }}
+          script: |
+            echo "Verifying imported jobs..."
+            $IIS_ADMIN_DIR/istool.sh list \
+              -host ${{ vars.IS_HOSTNAME }} -port 9446 \
+              -username ${{ secrets.IS_USERNAME }} -password ${{ secrets.IS_PASSWORD }} \
+              -project ${{ vars.IS_PROJECT_NAME }} jobs
+
+      - name: Performance Check
+        run: |
+          ssh $SSH_OPTS -i ~/.ssh/id_rsa root@${{ secrets.SERVER_HOST }} <<EOF
+            echo "Checking system resources..."
+            top -bn1 | head -20
+            echo "Active DataStage processes:"
+            ps -ef | grep [d]sapi
+          EOF
+
+  audit-trail:
+    needs: post-deployment
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Generate Deployment Report
+        run: |
+          ssh $SSH_OPTS -i ~/.ssh/id_rsa root@${{ secrets.SERVER_HOST }} <<EOF
+            echo "Deployment Audit Report - $(date)" > $ARTIFACT_DIR/audit.txt
+            echo "Environment: ${{ github.ref_name }}" >> $ARTIFACT_DIR/audit.txt
+            echo "Commit SHA: ${{ github.sha }}" >> $ARTIFACT_DIR/audit.txt
+            md5sum $ARTIFACT_DIR/*.dsx >> $ARTIFACT_DIR/audit.txt
+          EOF
+
+      - name: Archive Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-logs-${{ github.ref_name }}
+          path: $ARTIFACT_DIR/*.log
+          retention-days: 90
+
+  notify:
+    needs: [import-dsx, post-deployment, audit-trail]
+    if: always()
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:        
+      - name: Email Notification - Success
+        if: success()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          to: ashutosh.p@mastechdigital.com
+          from: GitHub Actions
+          subject: "Deployment Successful - ${{ github.ref_name }}"
+          body: "Deployment succeeded for ${{ github.sha }} in ${{ github.ref_name }}. See details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Email Notification - Failure
+        if: failure()
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.office365.com
+          server_port: 587
+          username: ${{ secrets.SMTP_USER }}
+          password: ${{ secrets.SMTP_PASSWORD }}
+          to: ashutosh.p@mastechdigital.com
+          from: GitHub Actions
+          subject: "Deployment Failed - ${{ github.ref_name }}"
+          body: "Deployment failed for ${{ github.sha }} in ${{ github.ref_name }}. See details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  cleanup:
+    needs: [notify]
+    if: always()
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }}
+    steps:
+      - name: Secure Cleanup
+        run: |
+          ssh $SSH_OPTS -i ~/.ssh/id_rsa root@${{ secrets.SERVER_HOST }} <<EOF
+            echo "Securely wiping temporary files..."
+            find $ARTIFACT_DIR -type f -exec shred -u {} \;
+            rm -rf $ARTIFACT_DIR
+          EOF
+          echo "Cleanup completed"
