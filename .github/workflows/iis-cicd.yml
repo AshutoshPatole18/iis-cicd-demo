@@ -166,38 +166,9 @@ jobs:
             source /opt/IBM/InformationServer/Server/DSEngine/dsenv
             /opt/IBM/InformationServer/Server/DSEngine/bin/dsjob -ljobs ${{ vars.IS_PROJECT_NAME }}
 
-      - name: Performance Check
-        run: |
-          ssh $SSH_OPTS -i ~/.ssh/id_rsa root@${{ secrets.SERVER_HOST }} <<EOF
-            echo "Checking system resources..."
-            top -bn1 | head -20
-            echo "Active DataStage processes:"
-            ps -ef | grep [d]sapi
-          EOF
-
-  audit-trail:
-    needs: post-deployment
-    runs-on: self-hosted
-    environment: ${{ github.ref_name }}
-    steps:
-      - name: Generate Deployment Report
-        run: |
-          ssh $SSH_OPTS -i ~/.ssh/id_rsa root@${{ secrets.SERVER_HOST }} <<EOF
-            echo "Deployment Audit Report - $(date)" > $ARTIFACT_DIR/audit.txt
-            echo "Environment: ${{ github.ref_name }}" >> $ARTIFACT_DIR/audit.txt
-            echo "Commit SHA: ${{ github.sha }}" >> $ARTIFACT_DIR/audit.txt
-            md5sum $ARTIFACT_DIR/*.dsx >> $ARTIFACT_DIR/audit.txt
-          EOF
-
-      - name: Archive Logs
-        uses: actions/upload-artifact@v4
-        with:
-          name: deployment-logs-${{ github.ref_name }}
-          path: $ARTIFACT_DIR/*.log
-          retention-days: 90
 
   notify:
-    needs: [import-dsx, post-deployment, audit-trail]
+    needs: [import-dsx, post-deployment]
     runs-on: self-hosted
     if: always()
     environment: ${{ github.ref_name }}
