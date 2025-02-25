@@ -39,24 +39,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Secret Scanning
+      - name: Set up Python environment
         run: |
-          # Install trufflehog if not already installed
-          if ! command -v trufflehog &> /dev/null; then
-            echo "Installing trufflehog..."
-            python3 -m pip install trufflehog
-          fi
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install trufflehog
 
-          # change the directory to one level up
-          cd ..
-          # print the current directory
-          echo "Current directory: $(pwd)"
-          
-          # list the files in the current directory
-          ls -la
-          
-          # Run secret scanning
-          trufflehog git file://iis-cicd-demo
+      - name: Secret Scanning with TruffleHog
+        run: |
+          source venv/bin/activate
+          echo "Running TruffleHog in the current repository..."
+          trufflehog git file://. --json > trufflehog_results.json
+          echo "TruffleHog scan completed. Results saved to trufflehog_results.json."
 
   prepare-artifacts:
     needs: [pre-checks, security-scan]
