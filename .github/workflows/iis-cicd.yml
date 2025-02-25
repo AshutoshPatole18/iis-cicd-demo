@@ -230,8 +230,8 @@ jobs:
 
   notify:
     needs: [import-dsx, post-deployment, audit-trail]
-    if: always()
     runs-on: self-hosted
+    if: always()
     environment: ${{ github.ref_name }}
     steps:        
       - name: Email Notification - Success
@@ -262,7 +262,6 @@ jobs:
 
   cleanup:
     needs: [notify]
-    if: always()
     runs-on: self-hosted
     environment: ${{ github.ref_name }}
     steps:
