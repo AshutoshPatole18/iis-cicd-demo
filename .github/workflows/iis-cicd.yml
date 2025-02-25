@@ -52,7 +52,7 @@ jobs:
       - name: Secret Scanning with TruffleHog
         run: |
           echo "Running TruffleHog in the current repository..."
-          trufflehog git file://. --json > trufflehog_results.json
+          trufflehog github --repo=https://github.com/AshutoshPatole18/iis-cicd-demo --json > trufflehog_results.json
           echo "TruffleHog scan completed. Results saved to trufflehog_results.json."
 
   prepare-artifacts:
