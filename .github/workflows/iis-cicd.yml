@@ -163,10 +163,7 @@ jobs:
           password: ${{ secrets.PASSWORD }}
           script: |
             echo "Verifying imported jobs..."
-            $IIS_ADMIN_DIR/istool.sh list \
-              -host ${{ vars.IS_HOSTNAME }} -port 9446 \
-              -username ${{ secrets.IS_USERNAME }} -password ${{ secrets.IS_PASSWORD }} \
-              -project ${{ vars.IS_PROJECT_NAME }} jobs
+            /opt/IBM/InformationServer/Server/DSEngine/bin/dsjob -ljobs -p ${{ vars.IS_PROJECT_NAME }}
 
       - name: Performance Check
         run: |
