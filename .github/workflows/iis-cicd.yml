@@ -40,13 +40,20 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Secret Scanning
-        uses: trufflesecurity/trufflehog@v3.63.7
-        with:
-          path: ./
-          base: ${{ github.event.before }}
-          head: ${{ github.event.after }}
-          extra_args: --only-verified
-          fail: true
+        run: |
+          # Install trufflehog if not already installed
+          if ! command -v trufflehog &> /dev/null; then
+            echo "Installing trufflehog..."
+            python3 -m pip install trufflehog
+          fi
+          
+          # Run secret scanning
+          trufflehog git \
+            --only-verified \
+            --fail \
+            --since-commit ${{ github.event.before }} \
+            --branch ${{ github.event.after }} \
+            file://./
 
   prepare-artifacts:
     needs: [pre-checks, security-scan]
@@ -233,20 +240,7 @@ jobs:
     runs-on: self-hosted
     if: always()
     environment: ${{ github.ref_name }}
-    steps:        
-      - name: Email Notification - Success
-        if: success()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.office365.com
-          server_port: 587
-          username: ${{ secrets.SMTP_USER }}
-          password: ${{ secrets.SMTP_PASSWORD }}
-          to: ashutosh.p@mastechdigital.com
-          from: GitHub Actions
-          subject: "Deployment Successful - ${{ github.ref_name }}"
-          body: "Deployment succeeded for ${{ github.sha }} in ${{ github.ref_name }}. See details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
+    steps:
       - name: Email Notification - Failure
         if: failure()
         uses: dawidd6/action-send-mail@v3
