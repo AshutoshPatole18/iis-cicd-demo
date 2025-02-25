@@ -46,10 +46,15 @@ jobs:
             echo "Installing trufflehog..."
             python3 -m pip install trufflehog
           fi
+
+          # change the directory to one level up
+          cd ..
           # print the current directory
           echo "Current directory: $(pwd)"
+          
           # list the files in the current directory
           ls -la
+          
           # Run secret scanning
           trufflehog git file://iis-cicd-demo
 
