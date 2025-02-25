@@ -163,6 +163,7 @@ jobs:
           password: ${{ secrets.PASSWORD }}
           script: |
             echo "Verifying imported jobs..."
+            source /opt/IBM/InformationServer/Server/DSEngine/dsenv
             /opt/IBM/InformationServer/Server/DSEngine/bin/dsjob -ljobs -p ${{ vars.IS_PROJECT_NAME }}
 
       - name: Performance Check
