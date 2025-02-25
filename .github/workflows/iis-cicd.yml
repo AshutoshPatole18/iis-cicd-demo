@@ -48,12 +48,7 @@ jobs:
           fi
           
           # Run secret scanning
-          trufflehog git \
-            --only-verified \
-            --fail \
-            --since-commit ${{ github.event.before }} \
-            --branch ${{ github.event.after }} \
-            file://./
+          trufflehog filesystem .
 
   prepare-artifacts:
     needs: [pre-checks, security-scan]
