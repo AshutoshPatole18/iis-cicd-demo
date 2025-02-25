@@ -54,6 +54,7 @@ jobs:
 
       - name: Copy files to remote server
         run: |
+          set -e
           echo "Setting up SSH directory and key..."
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
@@ -63,13 +64,13 @@ jobs:
           ls -l artifacts/*.dsx
 
           echo "Creating remote directory..."
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "mkdir -p /tmp/DSBuild"
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "mkdir -p /tmp/DSBuild" || { echo "Failed to create remote directory"; exit 1; }
           
           echo "Attempting to copy files to remote server..."
-          scp -v -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/
+          scp -v -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no artifacts/*.dsx root@${{ secrets.SERVER_HOST }}:/tmp/DSBuild/ || { echo "File copy failed"; exit 1; }
           
           echo "Verifying files on remote server..."
-          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "ls -l /tmp/DSBuild/*.dsx"
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no root@${{ secrets.SERVER_HOST }} "ls -l /tmp/DSBuild/*.dsx" || { echo "Verification failed"; exit 1; }
           
           echo "Cleaning up SSH key..."
           rm -f ~/.ssh/id_rsa
@@ -88,13 +89,14 @@ jobs:
           password: ${{ secrets.PASSWORD }}
           port: ${{ secrets.PORT }}
           script: |
+              set -e
               source ~/.bash_profile
               cd /tmp/DSBuild
               export IIS_DSX_PACKAGE=$(ls /tmp/DSBuild/*.dsx)
               IIS_ISADMIN_DIR="/opt/IBM/InformationServer/ASBNode/bin"
               cd ${IIS_ISADMIN_DIR}
               echo "Importing the DS Job on the ${{ github.ref_name }} Environment"
-              sudo ./DSXImportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9446 -ISUser ${{ secrets.IS_USERNAME }} -ISPassword ${{ secrets.IS_PASSWORD }} -DSProject ${{ vars.IS_PROJECT_NAME }} -DSXFile "${IIS_DSX_PACKAGE}" -Overwrite >> /tmp/DSBuild/job.log  2>&1
+              sudo ./DSXImportService.sh -ISHost ${{ vars.IS_HOSTNAME }}:9446 -ISUser ${{ secrets.IS_USERNAME }} -ISPassword ${{ secrets.IS_PASSWORD }} -DSProject ${{ vars.IS_PROJECT_NAME }} -DSXFile "${IIS_DSX_PACKAGE}" -Overwrite >> /tmp/DSBuild/job.log  2>&1 || { echo "Import failed"; cat /tmp/DSBuild/job.log; exit 1; }
               cat /tmp/DSBuild/job.log
               cd /tmp/
               rm -rf DSBuild
